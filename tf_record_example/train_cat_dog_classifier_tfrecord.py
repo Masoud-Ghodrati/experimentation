@@ -130,7 +130,7 @@ def get_batched_dataset(_filenames, _target_size, _batch_size, _num_parallel_cal
     dataset = dataset.interleave(tf.data.TFRecordDataset, cycle_length=16, num_parallel_calls=_num_parallel_calls)
     dataset = dataset.map(lambda x: read_tfrecord(x, _target_size=_target_size), num_parallel_calls=_num_parallel_calls)
 
-    dataset = dataset.cache()  # This dataset fits in RAM
+    dataset = dataset.take(200).cache()  # This dataset fits in RAM
     dataset = dataset.repeat()
     dataset = dataset.shuffle(2048)
     dataset = dataset.batch(_batch_size, drop_remainder=False)  # drop_remainder will be needed on TPU
@@ -203,11 +203,11 @@ def main():
 
     print(tf.version)
     AUTO = tf.data.experimental.AUTOTUNE  # used in tf.data.Dataset API
-    SHARDS = 16
+    SHARDS = 64
     TARGET_SIZE = 160
     path_train_image = 'C:/Users/masou/Downloads/train/train/'
     VALIDATION_SPLIT = 0.19
-    BATCH_SIZE = 32
+    BATCH_SIZE = 16
     EPOCHS = 10
 
     num_images = len(tf.io.gfile.glob(f'{path_train_image}*.jpg'))
