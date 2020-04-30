@@ -16,7 +16,7 @@ def read_image_and_label(_image_path):
     bits = tf.io.read_file(_image_path)
     image = tf.image.decode_jpeg(bits)
 
-    label = tf.strings.split(_image_path, sep='/')
+    label = tf.strings.split(_image_path, sep='\\')  # this \\ might be different in other system
     label = tf.strings.split(label[-1], sep='.')
 
     return image, label[0]
@@ -54,6 +54,7 @@ def load_image_dataset(_image_path, _target_size):
     images, labels = resize_and_crop_image(_image=images, _label=labels, _target_size=_target_size)
     images, labels = recompress_image(_image=images, _label=labels)
 
+
     return images, labels
 
 
@@ -61,19 +62,20 @@ def _bytestring_feature(list_of_bytestrings):
   return tf.train.Feature(bytes_list=tf.train.BytesList(value=list_of_bytestrings))
 
 
-def _int_feature(list_of_ints): # int64
+def _int_feature(list_of_ints):  # int64
   return tf.train.Feature(int64_list=tf.train.Int64List(value=list_of_ints))
 
 
-def _float_feature(list_of_floats): # float32
+def _float_feature(list_of_floats):  # float32
   return tf.train.Feature(float_list=tf.train.FloatList(value=list_of_floats))
 
 
-def to_tfrecord(img_bytes, label, _classes):
+def to_tfrecord(_img_bytes, _label, _classes):
 
-    class_num = np.argmax(np.array(_classes) == label)
+    class_num = np.argmax(np.array(_classes) == _label)
+    # print("Class name", np.array(_classes), 'label', _label, class_num)
     feature = {
-        "image": _bytestring_feature([img_bytes]),  # one image in the list
+        "image": _bytestring_feature([_img_bytes]),  # one image in the list
         "class": _int_feature([class_num]),  # one class in the list
     }
     return tf.train.Example(features=tf.train.Features(feature=feature))
@@ -81,13 +83,12 @@ def to_tfrecord(img_bytes, label, _classes):
 
 def create_tfrecord_files(_dataset, _classes, _path):
 
-    try:
-        path_tfrecord = _path + 'tfrecord_files'
+    path_tfrecord = _path + 'tfrecord_files'
+    if not os.path.isdir(path_tfrecord):
         os.makedirs(path_tfrecord)
-    except:
-        pass
 
     for shard, (image, label) in enumerate(_dataset):
+        # print(label)
         shard_size = image.numpy().shape[0]
         filename = f"cat_dog{shard:02d}-{shard_size}.tfrecords"
         full_filename = os.path.join(path_tfrecord, filename)
@@ -95,7 +96,7 @@ def create_tfrecord_files(_dataset, _classes, _path):
 
             with tf.io.TFRecordWriter(full_filename) as out_file:
                 for i in range(shard_size):
-                    example = to_tfrecord(image.numpy()[i], label.numpy()[i], _classes=_classes)
+                    example = to_tfrecord(_img_bytes=image.numpy()[i], _label=label.numpy()[i], _classes=_classes)
                     out_file.write(example.SerializeToString())
                 print(f"Wrote file: {full_filename} containing {shard_size} records")
         else:
@@ -149,7 +150,7 @@ def get_training_dataset(_training_filenames, _batch_size, _target_size, _num_pa
     return dataset
 
 
-def get_validation_dataset(_validation_filenames, _target_size, _batch_size, _num_parallel_calls=None):
+def get_validation_dataset(_validation_filenames, _batch_size, _target_size, _num_parallel_calls=None):
 
     dataset = get_batched_dataset(_filenames=_validation_filenames,
                                   _target_size=_target_size,
@@ -203,20 +204,20 @@ def main():
 
     print(tf.version)
     AUTO = tf.data.experimental.AUTOTUNE  # used in tf.data.Dataset API
-    SHARDS = 64
+    SHARDS = 16
     TARGET_SIZE = 160
-    path_train_image = 'C:/Users/masou/Downloads/train/train/'
+    path_train_image = "C:/Users/masou/Downloads/train/train/"
     VALIDATION_SPLIT = 0.19
-    BATCH_SIZE = 16
+    BATCH_SIZE = 32
     EPOCHS = 10
 
-    num_images = len(tf.io.gfile.glob(f'{path_train_image}*.jpg'))
+    num_images = len(tf.io.gfile.glob(os.path.join(path_train_image, '*.jpg')))
     shared_size = math.ceil(1.0 * num_images / SHARDS)
     print(f"Shared size for {num_images} number of images is {shared_size}")
     CLASSES = [b'cat', b'dog']  # do not change, maps to the labels in the data (folder names)
 
     # load images and resize it to the target size
-    dataset = tf.data.Dataset.list_files(f'{path_train_image}*.jpg', seed=10000)  # This also shuffles the images
+    dataset = tf.data.Dataset.list_files(os.path.join(path_train_image, '*.jpg'), seed=10000)  # This also shuffles the images
     dataset = dataset.map(lambda x: load_image_dataset(x, _target_size=TARGET_SIZE), num_parallel_calls=AUTO)
     dataset = dataset.batch(shared_size)
 
@@ -250,6 +251,21 @@ def main():
                                                                _batch_size=BATCH_SIZE,
                                                                _num_parallel_calls=AUTO),
                         validation_steps=validation_steps)
+
+    # some some sample images loaded from tfrecord
+    dataset = get_training_dataset(_training_filenames=training_filenames,
+                                   _target_size=TARGET_SIZE,
+                                   _batch_size=BATCH_SIZE,
+                                   _num_parallel_calls=AUTO)
+    plt.figure(figsize=(10, 10))
+    for i, (image, label) in enumerate(dataset.take(25)):
+        # print(d['image'])
+        image = tf.keras.preprocessing.image.array_to_img(image[0])
+        plt.subplot(5, 5, i + 1)
+        plt.imshow(image)
+
+        plt.title(str(CLASSES[label[0].numpy()]))
+    plt.show()
 
 
 if __name__ == '__main__':
